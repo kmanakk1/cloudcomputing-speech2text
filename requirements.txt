@@ -2,6 +2,7 @@ flask>=2.2.2
 werkzeug>=2.2.2
 vosk>=0.3
 pydub>=0.24
-rpyc>=5.3
+celery
+redis
 wave
 gunicorn

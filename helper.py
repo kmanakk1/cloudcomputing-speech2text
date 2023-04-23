@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 import wave
 import json
-import rpyc
 import time
 from os import path
 from pydub import AudioSegment
 from vosk import Model, KaldiRecognizer
 
-# initialize Vosk model and Kaldi recognizer
-def vosk_init(mdlfile, framerate):
-    model = Model(mdlfile)
-    kaldi = KaldiRecognizer(model, framerate)
-    return kaldi
+# Parameters
+UPLOAD_FOLDER = 'upload/audio'                  # path to uploaded audio clips
+MODEL = 'models/vosk-model-small-en-us-0.15'    # path to vosk
+
+# Helper functions
+def get_suffix(fn):
+    x = fn.split('.')
+    return x[len(x)-1]
+
+# confirm suffix
+def file_allowed(fn, allowed):
+    if get_suffix(fn) in allowed:
+        return True
+    return False
 
 # convert mp3 to mono wav
 def convert_mp3(mp3in, wavout):
@@ -20,17 +28,18 @@ def convert_mp3(mp3in, wavout):
     audio.export(wavout, format="wav")
 
 # convert stereo wav to mono wav
-def convert_wav(wavin, wavout):
-    audio = AudioSegment.from_wav(wavin)
-    audio = audio.set_channels(1)
-    audio.export(wavout, format="wav")
+#def convert_wav(wavin, wavout):
+#    audio = AudioSegment.from_wav(wavin)
+#    audio = audio.set_channels(1)
+#    audio.export(wavout, format="wav")
 
 # transcribe audio, given model filename and wav filename
-def transcriber(model_file, wav_filename):
-    wf = wave.open(wav_filename, 'rb')
-    kaldi = vosk_init(model_file, wf.getframerate())
+def vosk_transcribe(model_file, wav_filename):
+    wf = wave.open(wav_filename, 'rb')                  # open wav file
+    model = Model(model_file)                           # load Vosk model
+    kaldi = KaldiRecognizer(model, wf.getframerate())   # initialize Kaldi recognizer with the same framerate as model
     kaldi.SetWords(True)
-    output = ""
+    output = ""                                         # save output from recognizer
     # recognize audio
     while True:
         clip = wf.readframes(4000)           # read 4000 frames of input
@@ -42,23 +51,3 @@ def transcriber(model_file, wav_filename):
     outputText = outputDict.get("text", "")  # get text from audio as full string
     kaldi = None
     return outputText
-
-class TranscriberSvc(rpyc.Service):
-    def on_connect(self, conn):
-        self.conn = conn
-        pass
-
-    def on_disconnect(self, conn):
-        pass
-
-    def exposed_do_transcribe(self, tid, ext):
-        with open("test.txt", "a") as file:
-            time.sleep(10)
-            file.write(tid)
-        
-        return "worked"
-
-if __name__ == "__main__":
-    from rpyc.utils.server import ThreadedServer
-    t = ThreadedServer(TranscriberSvc, port=18861)
-    t.start()

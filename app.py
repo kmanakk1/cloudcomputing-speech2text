@@ -1,33 +1,62 @@
 from flask import Flask, render_template, request, url_for, flash, redirect, session
 from werkzeug.exceptions import abort
 from werkzeug.utils import secure_filename
+from celery import Celery
+from helper import vosk_transcribe, convert_mp3, file_allowed, get_suffix
 import os
 import uuid
-import rpyc
 
 DEBUG = True
-UPLOAD_FOLDER = 'audio'
+UPLOAD_FOLDER = 'upload/audio'
 ALLOWED_EXTENSIONS_AUDIO = {'mp3', 'wav'}
 
+# flask config
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1000 * 1000
 app.config['SECRET_KEY'] = str(uuid.uuid1())
 
-backend = rpyc.connect("localhost", 18861)
+# celery config
+REDIS_URL = 'redis://localhost:6379/0'
+app.config['CELERY_BROKER_URL'] = REDIS_URL
+app.config['CELERY_RESULT_BACKEND'] = REDIS_URL
 
-def get_suffix(fn):
-    x = fn.split('.')
-    return x[len(x)-1]
-
-def file_allowed(fn, allowed):
-    if get_suffix(fn) in allowed:
-        return True
-    return False
+# create celery object
+celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
+celery.conf.update(app.config)
 
 def debug_print(msg):
     if(DEBUG == True):
         print("DEBUG: " + msg)
+
+# Celery Tasks
+# do transcriptions in the background
+@celery.task
+def async_transcriber(task_id, task_ext):
+    # DEBUG
+    print("DEBUG: got task: " + task_id)
+
+    # get filename from task_id
+    filename_base = UPLOAD_FOLDER + '/' + task_id
+    filename = filename_base + '.' + task_ext
+
+    # if needed, convert input audio to wav format
+    if task_ext == 'mp3':
+        convert_mp3(filename, filename_base + '.wav')       # convert mp3 to wav
+        os.remove(filename)                                 # remove old mp3
+        filename = filename_base + '.wav'
+        
+    # do transcription
+    results = vosk_transcribe(MODEL, filename)              # do transcription (with Vosk)
+    os.remove(filename)                                     # clean up residual wav file
+
+    # debug: write output to file
+    out = open('results/' + task_id, "w")
+    out.write(results)
+    out.close()
+    return
+
+# Routes
 @app.route('/')
 def index():
     return render_template("index.html")
@@ -64,8 +93,11 @@ def transcribe_upload():
             filename = task_id + '.' + task_ext
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
-            # call backend to do transcription
-            doTranscribe = rpyc.async_(c.root.do_transcribe)
+            # connect to backend if needed
+            backend = rpyc.connect(BACKEND_HOST, BACKEND_PORT)
+
+            # do transcription on backend
+            doTranscribe = rpyc.async_(backend.root.do_transcribe)
             doTranscribe(task_id, task_ext)
 
             # keep track of task identifier
