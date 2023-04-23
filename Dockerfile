@@ -2,7 +2,7 @@ FROM python:slim
 #RUN export DEBIAN_FRONTEND=noninteractive; apt update; apt-get -y install python3 python3-pip virtualenv
 RUN export DEBIAN_FRONTEND=noninteractive; \
     apt-get update; \
-    apt-get -y install sox ffmpeg
+    apt-get -y install sox ffmpeg redis-server
 
 # Copy local code to the container image.
 ENV APP_DATA /app

@@ -2,15 +2,16 @@
 import wave
 import json
 import time
-from os import path
+from os import path, getenv
 from pydub import AudioSegment
 from vosk import Model, KaldiRecognizer
 
-# Parameters
-UPLOAD_FOLDER = 'upload/audio'                  # path to uploaded audio clips
-MODEL = 'models/vosk-model-small-en-us-0.15'    # path to vosk
-
 # Helper functions
+def get_env(key, default):
+    res = getenv(key)
+    if res == None: return default
+    return res
+
 def get_suffix(fn):
     x = fn.split('.')
     return x[len(x)-1]

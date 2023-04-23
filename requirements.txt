@@ -6,3 +6,4 @@ celery
 redis
 wave
 gunicorn
+firebase-admin

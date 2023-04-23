@@ -2,12 +2,12 @@
 {% block title %} TextSpeak {% endblock %}
 {% block content %}
 
-    <h1>Select audio file</h1>
+    <h2>Select audio file</h2>
     <form method="post" enctype="multipart/form-data">
         <input type="file" name="file">
         <input type="submit" value="Upload">
     </form>
-    <p>Max file size: 32mb, Supported Extensions: .mp3, .m4a, .wav, .ogg</p>
+    <p>Max file size: 32mb, Supported Extensions: .mp3, .wav</p>
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             <ul class=flashes>
