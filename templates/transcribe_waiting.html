@@ -2,7 +2,7 @@
 {% block title %} TextSpeak {% endblock %}
 {% block content %}
     <h1> {{task_id}} </h1>
-    <p> {{results}} </p>
+    <p> Transcription in process, please wait! </p>
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             <ul class=flashes>

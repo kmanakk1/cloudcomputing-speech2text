@@ -3,8 +3,8 @@ from werkzeug.exceptions import abort
 from werkzeug.utils import secure_filename
 from celery import Celery
 from helper import vosk_transcribe, convert_mp3, file_allowed, get_suffix, get_env
-import os
-import uuid
+from firebase_admin import db, credentials
+import firebase_admin, os, uuid
 
 DEBUG = True
 UPLOAD_FOLDER = 'upload/audio'
@@ -20,6 +20,12 @@ app.config['SECRET_KEY'] = str(uuid.uuid1())
 REDIS_URL = get_env('REDIS_URL', 'redis://localhost:6379/0')
 app.config['CELERY_BROKER_URL'] = REDIS_URL
 app.config['CELERY_result_backend'] = REDIS_URL
+
+# firebase config
+firebase_cred = credentials.Certificate("private/firebase_cred.json")
+firebase_admin.initialize_app(firebase_cred, {
+    'databaseURL': get_env('FIREBASE_URL', 'https://speechbackend-74730-default-rtdb.firebaseio.com/')
+})
 
 # vosk config
 VOSK_MODEL = 'models/vosk-model-small-en-us-0.15'    # path to vosk
@@ -39,6 +45,16 @@ def async_transcriber(task_id, task_ext):
     # DEBUG
     print("DEBUG: got task: " + task_id)
 
+    # reference firebase
+    ref = db.reference("/Tasks")
+
+    ref.set({
+        task_id: {
+            "text": "",
+            "finished": False
+        }
+    })
+
     # get filename from task_id
     filename_base = UPLOAD_FOLDER + '/' + task_id
     filename = filename_base + '.' + task_ext
@@ -50,8 +66,11 @@ def async_transcriber(task_id, task_ext):
         filename = filename_base + '.wav'
         
     # do transcription
-    results = vosk_transcribe(VOSK_MODEL, filename)              # do transcription (with Vosk)
+    results = vosk_transcribe(VOSK_MODEL, filename)         # do transcription (with Vosk)
     os.remove(filename)                                     # clean up residual wav file
+
+    # update firebase
+    ref.child(task_id).update({"text": results, "finished": True})
 
     # debug: write output to file
     out = open('results/' + task_id, "w")
@@ -69,7 +88,19 @@ def transcribe_results():
     task_id = request.args['task_id']
     #task_id = session['task_id']
     #task_ext = session['task_ext']
-    return render_template("transcribe_results.html", task_id=task_id)
+    ref = db.reference("/Tasks")
+    task = ref.child(task_id).get()
+    
+    # if task not in db yet, wait.
+    if not task:
+        return render_template("transcribe_waiting.html", task_id=task_id)
+
+    # if task is done, show results
+    if task['finished']:
+        return render_template("transcribe_results.html", task_id=task_id, results=task['text'])
+    
+    # task in db, but not done yet, wait.
+    return render_template("transcribe_waiting.html", task_id=task_id)
 
 @app.route('/upload', methods=["POST", "GET"])
 def transcribe_upload():

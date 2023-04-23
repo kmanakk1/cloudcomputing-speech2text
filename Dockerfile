@@ -14,6 +14,8 @@ RUN pip3 install -r requirements.txt
 
 # environment vars
 #ENV FLASK_APP "TextSpeak"
+ENV FIREBASE_CRED ""
+ENV FIREBASE_URL "https://speechbackend-74730-default-rtdb.firebaseio.com/"
 ENV HOST 0.0.0.0
 ENV PORT 8080
 
