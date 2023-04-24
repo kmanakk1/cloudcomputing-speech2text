@@ -16,7 +16,7 @@
     <a href="/text/{{task_id}}.txt"><button type="button" class="btn btn-primary btn-block">Download as text</button></a>
     <br/>
     {% if waitprogress != 100 %}
-        <div id="progressouter">
+        <div id="progressOuter">
             <center> Transcribing, progress:</center>
             <div class="progress">
                 <div class="progress-bar bg-success" id="progressBar" style="width:{{waitprogress}}%"> {{waitprogress}}%</div>
@@ -43,7 +43,7 @@
                 nameBox.innerHTML = task['name'];
                 resultsBox.innerHTML = task['text'];
                 if(task['finished']) {
-                    document.getElementById("progressouter").innerHTML = '';
+                    document.getElementById("progressOuter").innerHTML = '';
                     clearInterval(myInterval);
                 }
             }
