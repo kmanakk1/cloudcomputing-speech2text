@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %} TextSpeak {% endblock %}
+{% block content %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="alert alert-dismissible alert-danger">
+                Errors:
+            {% for category, message in messages %}
+                <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <h3 id="taskName"> {{task_name}} </h3>
+    {% if waitprogress != 100 %}
+        <div id="progressouter">
+            <center> Transcribing, progress:</center>
+            <div class="progress">
+                <div class="progress-bar bg-success" id="progressBar" style="width:{{waitprogress}}%"> {{waitprogress}}%</div>
+            </div>
+        </div>
+        <script>
+            var myInterval;
+            async function updateProgress() {
+                // boxes
+                bar = document.getElementById("progressBar");
+                resultsBox = document.getElementById("result_text");
+                nameBox = document.getElementById("taskName");
+
+                // fetch update
+                jsonurl = location.protocol + '//' + location.host + '/json?task_id=';
+                response = await fetch(jsonurl + '{{task_id}}');
+                task = await response.json();
+
+                // update progress bar
+                bar.style['width'] = task['progress'].toFixed(2) + '%';
+                bar.innerHTML = task['progress'].toFixed(2) + '%';
+
+                // update text
+                nameBox.innerHTML = task['name'];
+                resultsBox.innerHTML = task['text'];
+                if(task['finished']) {
+                    document.getElementById("progressouter").innerHTML = '';
+                    clearInterval(myInterval);
+                }
+            }
+            myInterval = setInterval(updateProgress, 1000);
+        </script>
+    {% endif %}
+    <div id="result_text"> {{results}} </div>
+{% endblock %}

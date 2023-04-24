@@ -1,10 +1,13 @@
-from flask import Flask, render_template, request, url_for, flash, redirect, session
+from flask import Flask, render_template, request, url_for, flash, redirect, session, jsonify
 from werkzeug.exceptions import abort
 from werkzeug.utils import secure_filename
 from celery import Celery
-from helper import vosk_transcribe, convert_mp3, file_allowed, get_suffix, get_env
+from helper import convert_mp3, file_allowed, get_suffix, get_env
 from firebase_admin import db, credentials
 import firebase_admin, os, uuid
+import wave, json
+from os import path
+from vosk import Model, KaldiRecognizer
 
 DEBUG = True
 UPLOAD_FOLDER = 'upload/audio'
@@ -13,7 +16,7 @@ ALLOWED_EXTENSIONS_AUDIO = {'mp3', 'wav'}
 # flask config
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 32 * 1000 * 1000
+app.config['MAX_CONTENT_LENGTH'] = 128 * 1000 * 1000
 app.config['SECRET_KEY'] = str(uuid.uuid1())
 
 # celery config
@@ -41,17 +44,20 @@ def debug_print(msg):
 # Celery Tasks
 # do transcriptions in the background
 @celery.task
-def async_transcriber(task_id, task_ext):
+def async_transcriber(task_id, task_ext, name):
     # DEBUG
     print("DEBUG: got task: " + task_id)
 
     # reference firebase
     ref = db.reference("/Tasks")
 
-    ref.set({
+    # initialize firebase reference
+    ref.update({
         task_id: {
             "text": "",
-            "finished": False
+            "name": name,
+            "finished": False,
+            "progress": 0,
         }
     })
 
@@ -66,44 +72,82 @@ def async_transcriber(task_id, task_ext):
         filename = filename_base + '.wav'
         
     # do transcription
-    results = vosk_transcribe(VOSK_MODEL, filename)         # do transcription (with Vosk)
+    #r00 = vosk_transcribe(VOSK_MODEL, filename)         # do transcription (with Vosk)
+
+    wf = wave.open(filename, 'rb')                      # open wav file
+    model = Model(VOSK_MODEL)                           # load Vosk model
+    kaldi = KaldiRecognizer(model, wf.getframerate())   # initialize Kaldi recognizer with the same framerate as model
+    kaldi.SetWords(True)
+    #result_json = ""                                      # save output from recognizer
+    result_text = ""
+    total_frames = wf.getnframes()
+    current_frame = 0
+    progress = 0
+    hundredth = total_frames/100
+    # recognize audio
+    while True:
+        current_frame += 4000
+        clip = wf.readframes(4000)           # read 4000 frames of input
+        if(len(clip) == 0): break            # are we done yet?
+        if(kaldi.AcceptWaveform(clip)):      # feed frames to recognizer
+            kaldi_res = kaldi.Result()
+            new_text = json.loads(kaldi_res).get("text", "")
+            if not new_text == "":
+                result_text = result_text + " " + new_text
+            if(current_frame >= progress*hundredth):
+                ref.child(task_id).update({"text": result_text, "progress": (current_frame/total_frames)*100, "finished": False})
+                progress += 1
+
+    # add final result to output
+    result_text = result_text + json.loads(kaldi.FinalResult()).get("text", "")
+    kaldi = None
+
     os.remove(filename)                                     # clean up residual wav file
 
     # update firebase
-    ref.child(task_id).update({"text": results, "finished": True})
+    ref.child(task_id).update({"text": result_text, "finished": True, "progress": 100})
 
     # debug: write output to file
     out = open('results/' + task_id, "w")
-    out.write(results)
+    out.write(result_text)
     out.close()
     return
 
 # Routes
 @app.route('/')
 def index():
-    return render_template("index.html")
+    #return render_template("index.html")
+    return redirect(url_for('.upload'))
 
-@app.route('/results')
-def transcribe_results():
+@app.route('/json')
+def transcribe_json():
     task_id = request.args['task_id']
-    #task_id = session['task_id']
-    #task_ext = session['task_ext']
     ref = db.reference("/Tasks")
     task = ref.child(task_id).get()
-    
-    # if task not in db yet, wait.
-    if not task:
-        return render_template("transcribe_waiting.html", task_id=task_id)
+    return jsonify(task)
 
-    # if task is done, show results
-    if task['finished']:
-        return render_template("transcribe_results.html", task_id=task_id, results=task['text'])
-    
-    # task in db, but not done yet, wait.
-    return render_template("transcribe_waiting.html", task_id=task_id)
+@app.route('/results')
+def results():
+    # query firebase
+    task_id = request.args['task_id']
+    ref = db.reference("/Tasks")
+    task = ref.child(task_id).get()
+
+    progress = 0
+    name = "Waiting..."
+    # check results
+    if task:
+        progress = task['progress']
+        name = task['name']
+        # if task is done, show results
+        if task['finished']:
+            return render_template("results.html", task_name=name, results=task['text'], waitprogress=100)
+
+    # task not in db, or not done yet, wait.
+    return render_template("results.html", task_name=name, task_id=task_id, waitprogress=progress)
 
 @app.route('/upload', methods=["POST", "GET"])
-def transcribe_upload():
+def upload():
     if request.method == 'POST':
         if 'file' not in request.files:
             debug_print("No file part")
@@ -115,12 +159,12 @@ def transcribe_upload():
             flash("No file selected")
             return redirect(request.url)
         
-        debug_print(file.filename)
+        # if file is allowed, start transcription task and send user to waiting page
         if file and file_allowed(file.filename, ALLOWED_EXTENSIONS_AUDIO):
             # assign the task a random uuid
             task_id = str(uuid.uuid1())
             task_ext = get_suffix(secure_filename(file.filename))
-
+            task_name = secure_filename(file.filename)
             debug_print("uploaded file: " + task_id)
 
             # accept uploaded file
@@ -128,21 +172,15 @@ def transcribe_upload():
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
             # Asynchronously do transcription
-            async_transcriber.delay(task_id, task_ext)
-
-            # keep track of task identifier
-            #session['task_id'] = task_id
-            #session['task_ext'] = task_ext
+            async_transcriber.delay(task_id, task_ext, task_name)
 
             # redirect to results page
-            return redirect(url_for('.transcribe_results', task_id=task_id, task_ext=task_ext))
-
+            return redirect(url_for('.results', task_id=task_id))
         else:
-            debug_print("Invalid file extension")
+            # else, file was not allowed: inform user of their error
             flash("Invalid File Extension")
             return redirect(request.url)
-    debug_print("Upload page: " + request.method)
-    return render_template("transcribe_upload.html")
+    return render_template("upload.html")
 
 
 if __name__ == "__main__":
