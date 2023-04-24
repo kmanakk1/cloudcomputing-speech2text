@@ -12,7 +12,9 @@
         {% endif %}
     {% endwith %}
 
-    <h3 id="taskName"> {{task_name}} </h3>
+    <h3 id="taskName"> Task: {{task_name}}</h3>
+    <a href="/text/{{task_id}}.txt"><button type="button" class="btn btn-primary btn-block">Download as text</button></a>
+    <br/>
     {% if waitprogress != 100 %}
         <div id="progressouter">
             <center> Transcribing, progress:</center>

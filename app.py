@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, url_for, flash, redirect, session, jsonify
+from flask import Flask, render_template, request, url_for, flash, redirect, session, jsonify, make_response
 from werkzeug.exceptions import abort
 from werkzeug.utils import secure_filename
 from celery import Celery
@@ -126,6 +126,18 @@ def transcribe_json():
     task = ref.child(task_id).get()
     return jsonify(task)
 
+@app.route('/text/<var>')
+def get_text(var):
+    task_id = var.split('.')[0]
+    ref = db.reference("/Tasks")
+    task = ref.child(task_id).get()
+    text = "Invalid task id"
+    if task: text = task['text']
+
+    response = make_response(text, 200)
+    response.mimetype = "text/plain"
+    return response
+
 @app.route('/results')
 def results():
     # query firebase
@@ -141,7 +153,7 @@ def results():
         name = task['name']
         # if task is done, show results
         if task['finished']:
-            return render_template("results.html", task_name=name, results=task['text'], waitprogress=100)
+            return render_template("results.html", task_name=name, results=task['text'], waitprogress=100, task_id=task_id)
 
     # task not in db, or not done yet, wait.
     return render_template("results.html", task_name=name, task_id=task_id, waitprogress=progress)
