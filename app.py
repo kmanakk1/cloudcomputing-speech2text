@@ -78,11 +78,10 @@ def async_transcriber(task_id, task_ext, name):
     model = Model(VOSK_MODEL)                           # load Vosk model
     kaldi = KaldiRecognizer(model, wf.getframerate())   # initialize Kaldi recognizer with the same framerate as model
     kaldi.SetWords(True)
-    #result_json = ""                                      # save output from recognizer
-    result_text = ""
-    total_frames = wf.getnframes()
-    current_frame = 0
-    progress = 0
+    result_text = ""                                    # save output from recognizer
+    total_frames = wf.getnframes()                      # get total frames
+    current_frame = 0                                   # keep track of current frame
+    progress = 0                                        # track progress
     hundredth = total_frames/100
     # recognize audio
     while True:
@@ -95,6 +94,7 @@ def async_transcriber(task_id, task_ext, name):
             if not new_text == "":
                 result_text = result_text + " " + new_text
             if(current_frame >= progress*hundredth):
+                # we upload snippets while transcribing, for a fancier web view
                 ref.child(task_id).update({"text": result_text, "progress": (current_frame/total_frames)*100, "finished": False})
                 progress += 1
 
@@ -102,15 +102,19 @@ def async_transcriber(task_id, task_ext, name):
     result_text = result_text + json.loads(kaldi.FinalResult()).get("text", "")
     kaldi = None
 
-    os.remove(filename)                                     # clean up residual wav file
+    # clean up residual wav file
+    os.remove(filename)
 
     # update firebase
     ref.child(task_id).update({"text": result_text, "finished": True, "progress": 100})
 
     # debug: write output to file
-    out = open('results/' + task_id, "w")
-    out.write(result_text)
-    out.close()
+    try:
+        out = open('results/' + task_id, "w")
+        out.write(result_text)
+        out.close()
+    except:
+        print("could not open file")
     return
 
 # Routes
@@ -197,7 +201,3 @@ def upload():
 
 if __name__ == "__main__":
     app.run()
-
-
-    # use celery to run transcription in bg
-    # https://docs.celeryq.dev/en/stable/
