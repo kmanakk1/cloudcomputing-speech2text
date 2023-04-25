@@ -11,5 +11,8 @@ celery -A app.celery worker --loglevel=info --pidfile=/tmp/celery-worker.pid -f 
 # save firebase cred
 mkdir -p private
 echo "$FIREBASE_CRED" | base64 -d > private/firebase_cred.json
+
+mkdir -p upload/audio results static
+
 # start frontend (flask)
 gunicorn -p /tmp/gunicorn.pid --bind ${HOST}:${PORT} wsgi:app
