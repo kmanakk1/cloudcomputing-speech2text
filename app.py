@@ -72,8 +72,6 @@ def async_transcriber(task_id, task_ext, name):
         filename = filename_base + '.wav'
         
     # do transcription
-    #r00 = vosk_transcribe(VOSK_MODEL, filename)         # do transcription (with Vosk)
-
     wf = wave.open(filename, 'rb')                      # open wav file
     model = Model(VOSK_MODEL)                           # load Vosk model
     kaldi = KaldiRecognizer(model, wf.getframerate())   # initialize Kaldi recognizer with the same framerate as model
@@ -83,6 +81,7 @@ def async_transcriber(task_id, task_ext, name):
     current_frame = 0                                   # keep track of current frame
     progress = 0                                        # track progress
     hundredth = total_frames/100
+
     # recognize audio
     while True:
         current_frame += 4000
@@ -120,7 +119,6 @@ def async_transcriber(task_id, task_ext, name):
 # Routes
 @app.route('/')
 def index():
-    #return render_template("index.html")
     return redirect(url_for('.upload'))
 
 @app.route('/json')
